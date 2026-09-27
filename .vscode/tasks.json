@@ -5,10 +5,27 @@
       "label": "Run Containers final project lab",
       "type": "shell",
       "command": "bash",
-      "args": ["run_lab.sh"],
-      "options": {"cwd": "${workspaceFolder}"},
-      "presentation": {"reveal": "always", "panel": "dedicated"},
+      "args": [
+        "run_lab.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
       "problemMatcher": []
+    },
+    {
+      "label": "Verify restored app and package evidence",
+      "type": "shell",
+      "command": "bash finish_evidence.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
     }
   ]
 }
