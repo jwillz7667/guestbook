@@ -13,7 +13,7 @@ docker build -t guestbook:local .
 docker run --rm -p 127.0.0.1:3000:3000 guestbook:local
 ```
 
-Open http://127.0.0.1:3000/ to sign the guestbook. Tests cover valid and invalid input, foreign-origin rejection, escaped output, absence of an environment disclosure endpoint, and concurrent writes with bounded retention. the current official Go 1 builder (Go 1.23 language compatibility) is a stable release listed by https://go.dev/dl/.
+Open http://127.0.0.1:3000/ to sign the guestbook. Tests cover valid and invalid input, foreign-origin rejection, escaped output, absence of an environment disclosure endpoint, and concurrent writes with bounded retention. The builder uses the official Go 1.26 image pinned to its verified Docker Hub digest, with Go 1.23 language compatibility.
 
 ## Run in the IBM Skills Network lab
 
