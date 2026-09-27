@@ -13,7 +13,7 @@ docker build -t guestbook:local .
 docker run --rm -p 127.0.0.1:3000:3000 guestbook:local
 ```
 
-Open http://127.0.0.1:3000/ to sign the guestbook. Tests cover valid and invalid input, foreign-origin rejection, escaped output, absence of an environment disclosure endpoint, and concurrent writes with bounded retention. The builder uses the official Go 1.26 image pinned to its verified Docker Hub digest, with Go 1.23 language compatibility.
+Open http://127.0.0.1:3000/ to sign the guestbook. Tests cover valid and invalid input, foreign-origin rejection, escaped output, absence of an environment disclosure endpoint, and concurrent writes with bounded retention. The cloud builder uses the official Go 1.24 image with Go 1.23 language compatibility. The course lab registry could not resolve newer official image tags/digests; the final runtime is a non-root scratch image.
 
 ## Run in the IBM Skills Network lab
 
