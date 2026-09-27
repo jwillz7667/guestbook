@@ -1,4 +1,4 @@
-FROM golang:1.27.1 AS builder
+FROM golang:1 AS builder
 WORKDIR /app
 COPY go.mod main.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/guestbook .
