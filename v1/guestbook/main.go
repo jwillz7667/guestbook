@@ -1,194 +1,117 @@
-/*
-Copyright 2014 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
+// Copyright 2014 The Kubernetes Authors.
+// Licensed under the Apache License, Version 2.0.
+// See the repository LICENSE file.
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
 	"strings"
-
-	"github.com/codegangsta/negroni"
-	"github.com/gorilla/mux"
-	"github.com/xyproto/simpleredis/v2"
+	"sync"
+	"syscall"
+	"time"
+	"unicode/utf8"
 )
 
-var (
-	// For when Redis is used
-	masterPool *simpleredis.ConnectionPool
-	slavePool  *simpleredis.ConnectionPool
-
-	// For when Redis is not used, we just keep it in memory
-	lists map[string][]string = map[string][]string{}
-)
-
-type Input struct {
-	InputText string `json:"input_text"`
+// Entries are intentionally ephemeral and local to each replica in this lab.
+// A shared database is required before using a scaled deployment for durable data.
+type guestbook struct {
+	mu      sync.RWMutex
+	entries []string
 }
 
-func GetList(key string) ([]string, error) {
-	// Using Redis
-	if slavePool != nil {
-		list := simpleredis.NewList(slavePool, key)
-		if result, err := list.GetAll(); err == nil {
-			return result, err
+func (g *guestbook) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/entries", func(w http.ResponseWriter, r *http.Request) {
+		g.mu.RLock()
+		entries := append([]string{}, g.entries...)
+		g.mu.RUnlock()
+		writeJSON(w, http.StatusOK, entries)
+	})
+	mux.HandleFunc("POST /api/entries", func(w http.ResponseWriter, r *http.Request) {
+		// Browser writes must originate from this application.
+		if raw := r.Header.Get("Origin"); raw != "" {
+			origin, err := url.Parse(raw)
+			if err != nil || origin.Host != r.Host || (origin.Scheme != "https" && origin.Scheme != "http") {
+				http.Error(w, "Origin not allowed", http.StatusForbidden)
+				return
+			}
 		}
-		// if we can't talk to the slave then assume its not running yet
-		// so just try to use the master instead
-	}
-
-	// if the slave doesn't exist, read from the master
-	if masterPool != nil {
-		list := simpleredis.NewList(masterPool, key)
-		return list.GetAll()
-	}
-
-	// if neither exist, we're probably in "in-memory" mode
-	return lists[key], nil
-}
-
-func AppendToList(item string, key string) ([]string, error) {
-	var err error
-	items := []string{}
-
-	// Using Redis
-	if masterPool != nil {
-		list := simpleredis.NewList(masterPool, key)
-		list.Add(item)
-		items, err = list.GetAll()
-		if err != nil {
-			return nil, err
+		if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
+			http.Error(w, "Use application/json", http.StatusUnsupportedMediaType)
+			return
 		}
-	} else {
-		items = lists[key]
-		items = append(items, item)
-		lists[key] = items
-	}
-	return items, nil
-}
-
-func ListRangeHandler(rw http.ResponseWriter, req *http.Request) {
-	var data []byte
-
-	items, err := GetList(mux.Vars(req)["key"])
-	if err != nil {
-		data = []byte("Error getting list: " + err.Error() + "\n")
-	} else {
-		if data, err = json.MarshalIndent(items, "", ""); err != nil {
-			data = []byte("Error marhsalling list: " + err.Error() + "\n")
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		var input struct {
+			Message string `json:"message"`
 		}
-	}
-
-	rw.Write(data)
-}
-
-func ListPushHandler(rw http.ResponseWriter, req *http.Request) {
-	var data []byte
-
-	key := mux.Vars(req)["key"]
-	value := mux.Vars(req)["value"]
-
-	items, err := AppendToList(value, key)
-
-	if err != nil {
-		data = []byte("Error adding to list: " + err.Error() + "\n")
-	} else {
-		if data, err = json.MarshalIndent(items, "", ""); err != nil {
-			data = []byte("Error marshalling list: " + err.Error() + "\n")
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			http.Error(w, "Invalid message", http.StatusBadRequest)
+			return
 		}
-
-	}
-	rw.Write(data)
-}
-
-func InfoHandler(rw http.ResponseWriter, req *http.Request) {
-	info := ""
-
-	// Using Redis
-	if masterPool != nil {
-		i, err := masterPool.Get(0).Do("INFO")
-		if err != nil {
-			info = "Error getting DB info: " + err.Error()
-		} else {
-			info = string(i.([]byte))
+		if err := decoder.Decode(&struct{}{}); err != io.EOF {
+			http.Error(w, "Provide exactly one JSON message", http.StatusBadRequest)
+			return
 		}
-	} else {
-		info = "In-memory datastore (not redis)"
-	}
-	rw.Write([]byte(info + "\n"))
+		input.Message = strings.TrimSpace(input.Message)
+		if input.Message == "" || !utf8.ValidString(input.Message) || utf8.RuneCountInString(input.Message) > 500 {
+			http.Error(w, "Enter a message of 1 to 500 characters", http.StatusBadRequest)
+			return
+		}
+		g.mu.Lock()
+		if len(g.entries) >= 100 {
+			g.entries = g.entries[1:]
+		}
+		g.entries = append(g.entries, input.Message)
+		entries := append([]string{}, g.entries...)
+		g.mu.Unlock()
+		writeJSON(w, http.StatusCreated, entries)
+	})
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
+	mux.Handle("GET /", http.FileServer(http.Dir("public")))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'")
+		w.Header().Set("Cache-Control", "no-store")
+		mux.ServeHTTP(w, r)
+	})
 }
 
-func EnvHandler(rw http.ResponseWriter, req *http.Request) {
-	environment := make(map[string]string)
-	for _, item := range os.Environ() {
-		splits := strings.Split(item, "=")
-		key := splits[0]
-		val := strings.Join(splits[1:], "=")
-		environment[key] = val
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		log.Printf("write response: %v", err)
 	}
-
-	data, err := json.MarshalIndent(environment, "", "")
-	if err != nil {
-		data = []byte("Error marshalling env vars: " + err.Error())
-	}
-
-	rw.Write(data)
-}
-
-func HelloHandler(rw http.ResponseWriter, req *http.Request) {
-	rw.Write([]byte("Hello from guestbook. " +
-		"Your app is up! (Hostname: " +
-		os.Getenv("HOSTNAME") +
-		")\n"))
-}
-
-// Support multiple URL schemes for different use cases
-func findRedisURL() string {
-	host := os.Getenv("REDIS_MASTER_SERVICE_HOST")
-	port := os.Getenv("REDIS_MASTER_SERVICE_PORT")
-	password := os.Getenv("REDIS_MASTER_SERVICE_PASSWORD")
-	master_port := os.Getenv("REDIS_MASTER_PORT")
-
-	if host != "" && port != "" && password != "" {
-		return password + "@" + host + ":" + port
-	} else if master_port != "" {
-		return "redis-master:6379"
-	}
-	return ""
 }
 
 func main() {
-	// When using Redis, setup our DB connections
-	url := findRedisURL()
-	if url != "" {
-		masterPool = simpleredis.NewConnectionPoolHost(url)
-		defer masterPool.Close()
-		slavePool = simpleredis.NewConnectionPoolHost("redis-slave:6379")
-		defer slavePool.Close()
+	app := &guestbook{}
+	server := &http.Server{Addr: ":3000", Handler: app.handler(), ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		deadline, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(deadline); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
+	}()
+	log.Print("Guestbook listening on port 3000")
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
 	}
-
-	r := mux.NewRouter()
-	r.Path("/lrange/{key}").Methods("GET").HandlerFunc(ListRangeHandler)
-	r.Path("/rpush/{key}/{value}").Methods("GET").HandlerFunc(ListPushHandler)
-	r.Path("/info").Methods("GET").HandlerFunc(InfoHandler)
-	r.Path("/env").Methods("GET").HandlerFunc(EnvHandler)
-	r.Path("/hello").Methods("GET").HandlerFunc(HelloHandler)
-
-	n := negroni.Classic()
-	n.UseHandler(r)
-	n.Run(":3000")
 }

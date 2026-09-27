@@ -1,36 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
-    <meta charset="utf-8">
-    <meta content="width=device-width" name="viewport">
-    <link href="style.css" rel="stylesheet">
-    <title>Lavanya's Guestbook - v1</title>
-  </head>
-  <body>
-    <div id="header">
-      <h1>Guestbook - v1</h1>
-    </div>
-
-    <div id="guestbook-entries">
-      <link href="https://afeld.github.io/emoji-css/emoji.css" rel="stylesheet">
-      <p>Waiting for database connection... <i class='em em-boat'></i></p>
-      
-    </div>
-
-    <div>
-      <form id="guestbook-form">
-        <input autocomplete="off" id="guestbook-entry-content" type="text">
-        <a href="#" id="guestbook-submit">Submit</a>
-      </form>
-    </div>
-
-    <div>
-      <p><h2 id="guestbook-host-address"></h2></p>
-      <p><a href="env">/env</a>
-      <a href="info">/info</a></p>
-    </div>
-    <script src="jquery.min.js"></script>
-    <script src="script.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="style.css" rel="stylesheet">
+  <title>Guestbook - v1</title>
+</head>
+<body>
+<main>
+  <header id="header"><p class="eyebrow">A PLACE TO SAY HELLO</p><h1>Guestbook - v1</h1><p>Leave a note for the next visitor.</p></header>
+  <form id="guestbook-form">
+    <label for="guestbook-entry-content">Your message</label>
+    <textarea id="guestbook-entry-content" maxlength="500" required rows="3" placeholder="Hello from Justin!"></textarea>
+    <button id="guestbook-submit" type="submit">Sign guestbook</button>
+    <p id="status" role="status" aria-live="polite"></p>
+  </form>
+  <section aria-labelledby="entries-heading"><h2 id="entries-heading">Recent messages</h2><div id="guestbook-entries"></div></section>
+  <footer>IBM container lab · Demo messages are temporary and stored per replica.</footer>
+</main>
+<script src="script.js"></script>
+</body>
 </html>

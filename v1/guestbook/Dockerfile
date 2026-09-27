@@ -1,37 +1,14 @@
-# Please choose from the below set of Docker commands to complete your Dockerfile:
-
-# COPY
-# RUN
-# ADD
-# EXPOSE
-# FROM
-# CMD
-# PUSH
-# PULL
-# WORKDIR
-
-
-FROM golang:1.18 AS builder
-
+FROM golang:1.27.1 AS builder
 WORKDIR /app
+COPY go.mod main.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/guestbook .
 
-COPY main.go .
-
-RUN go mod init guestbook
-RUN go mod tidy
-
-RUN go build -o main main.go
-
-FROM ubuntu:18.04
-
-<Please fill in the required Docker command> --from=builder /app/main /app/guestbook
-
-<Please fill in the required Docker command> public/index.html /app/public/index.html
-<Please fill in the required Docker command> public/script.js /app/public/script.js
-<Please fill in the required Docker command> public/style.css /app/public/style.css
-<Please fill in the required Docker command> public/jquery.min.js /app/public/jquery.min.js
-
+FROM scratch
 WORKDIR /app
-
-CMD ["./guestbook"]
-<Please fill in the required Docker command> 3000
+COPY --from=builder /app/guestbook /app/guestbook
+COPY public/index.html /app/public/index.html
+COPY public/script.js /app/public/script.js
+COPY public/style.css /app/public/style.css
+USER 65532:65532
+EXPOSE 3000
+CMD ["/app/guestbook"]

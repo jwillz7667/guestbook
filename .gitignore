@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+evidence/
+guestbook-evidence.tar.gz
+v1/guestbook/guestbook

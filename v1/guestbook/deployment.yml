@@ -1,34 +1,36 @@
+# Replace ${GUESTBOOK_IMAGE} with the pushed immutable image digest.
+# run_lab.sh creates a resolved equivalent in evidence/deployment-v1.yml.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: guestbook
-  labels:
-    app: guestbook 
+  labels: {app: guestbook}
 spec:
   replicas: 1
   selector:
-    matchLabels:
-      app: guestbook
+    matchLabels: {app: guestbook}
   strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
     type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
   template:
     metadata:
-      labels:
-        app: guestbook
+      labels: {app: guestbook}
     spec:
       containers:
-      - image: us.icr.io/<your sn labs namespace>/guestbook:v1
-        imagePullPolicy: Always
-        name: guestbook
-        ports:
-        - containerPort: 3000
-          name: http
-        resources:
-          limits:
-            cpu: 50m
-          requests:
-            cpu: 20m  
-  replicas: 1
+        - name: guestbook
+          image: ${GUESTBOOK_IMAGE}
+          imagePullPolicy: Always
+          ports: [{containerPort: 3000, name: http}]
+          resources:
+            limits: {cpu: 50m, memory: 64Mi}
+            requests: {cpu: 20m, memory: 16Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 3000}
+            initialDelaySeconds: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: 3000}
+            initialDelaySeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
